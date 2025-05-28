@@ -56,7 +56,7 @@ def rgb_to_hex(rgb):
     return '#{:02x}{:02x}{:02x}'.format(*rgb)
 
 # UI Streamlit
-st.title("🎨 Dominant Color Picker tanpa matplotlib")
+st.title("🎨 Dominant Color Picker")
 
 uploaded_file = st.file_uploader("Pilih gambar...", type=["jpg", "jpeg", "png"])
 
