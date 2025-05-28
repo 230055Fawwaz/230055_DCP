@@ -7,68 +7,90 @@
 import streamlit as st
 from PIL import Image
 import numpy as np
-import matplotlib.pyplot as plt
 
-# Hitung jarak Euclidean antara dua warna
+# Fungsi untuk menghitung jarak Euclidean antara dua titik warna
 def euclidean_distance(a, b):
     return np.sqrt(np.sum((a - b) ** 2))
 
-# Clustering manual untuk mencari warna dominan
-def manual_color_clustering(image, n_colors=5, max_iter=10):
-    image = image.resize((150, 150))  # Resize untuk percepat proses
-    pixels = np.array(image).reshape(-1, 3).astype(float)
+# Fungsi untuk menginisialisasi centroid secara acak dari kumpulan pixel
+def initialize_centroids(pixels, k):
+    indices = np.random.choice(len(pixels), k, replace=False)  # pilih indeks acak tanpa pengulangan
+    return pixels[indices]
 
-    # Pilih centroid awal secara acak dari piksel
-    np.random.seed(42)
-    centroids = pixels[np.random.choice(len(pixels), n_colors, replace=False)]
+# Fungsi untuk mengelompokkan pixel berdasarkan centroid terdekat
+def assign_clusters(pixels, centroids):
+    clusters = [[] for _ in range(len(centroids))]  # buat list kosong untuk tiap cluster
+    for pixel in pixels:
+        # Hitung jarak pixel ke semua centroid
+        distances = [euclidean_distance(pixel, centroid) for centroid in centroids]
+        cluster_index = np.argmin(distances)  # cari centroid terdekat
+        clusters[cluster_index].append(pixel)  # tambahkan pixel ke cluster tersebut
+    return clusters
 
-    for _ in range(max_iter):
-        # Kelompokkan piksel ke centroid terdekat
-        labels = []
-        for pixel in pixels:
-            distances = [euclidean_distance(pixel, centroid) for centroid in centroids]
-            labels.append(np.argmin(distances))
-        labels = np.array(labels)
+# Fungsi untuk memperbarui posisi centroid berdasarkan rata-rata pixel di cluster
+def update_centroids(clusters, k):
+    new_centroids = []
+    for cluster in clusters:
+        if len(cluster) == 0:
+            # Jika cluster kosong, buat centroid baru secara acak
+            new_centroids.append(np.random.randint(0, 256, 3))
+        else:
+            # Hitung rata-rata warna pixel dalam cluster
+            new_centroids.append(np.mean(cluster, axis=0))
+    return np.array(new_centroids)
 
-        # Update centroid sebagai rata-rata dari setiap grup
-        new_centroids = []
-        for i in range(n_colors):
-            cluster_pixels = pixels[labels == i]
-            if len(cluster_pixels) > 0:
-                new_centroids.append(np.mean(cluster_pixels, axis=0))
-            else:
-                # Jika cluster kosong, inisialisasi ulang secara acak
-                new_centroids.append(pixels[np.random.choice(len(pixels))])
-        centroids = np.array(new_centroids)
+# Fungsi utama k-means clustering manual
+def kmeans_manual(pixels, k, max_iters=10):
+    centroids = initialize_centroids(pixels, k)  # inisialisasi centroid
+    for _ in range(max_iters):
+        clusters = assign_clusters(pixels, centroids)  # assign pixel ke cluster
+        new_centroids = update_centroids(clusters, k)  # update centroid
+        # Jika centroid tidak berubah signifikan, hentikan iterasi
+        if np.allclose(centroids, new_centroids):
+            break
+        centroids = new_centroids
+    return centroids.astype(int)  # kembalikan centroid sebagai integer (RGB)
 
-    # Konversi ke integer & hex
-    final_colors = centroids.astype(int)
-    hex_colors = ['#%02x%02x%02x' % tuple(color) for color in final_colors]
+# Fungsi untuk konversi nilai RGB ke kode warna hex
+def rgb_to_hex(rgb):
+    return '#{:02x}{:02x}{:02x}'.format(*rgb)
 
-    return final_colors, hex_colors
-
-# Tampilkan palet warna di bawah gambar
-def show_palette(colors, hex_colors):
-    fig, ax = plt.subplots(figsize=(max(len(colors), 5), 2))
-    for i, (color, hex_code) in enumerate(zip(colors, hex_colors)):
-        ax.add_patch(plt.Rectangle((i, 0), 1, 1, color=np.array(color)/255))
-        ax.text(i + 0.5, -0.2, hex_code, ha='center', va='top', fontsize=10)
-    ax.set_xlim(0, len(colors))
-    ax.set_ylim(0, 1)
-    ax.axis('off')
-    st.pyplot(fig)
-
-# Streamlit UI
-st.title("🎨 Dominant Color Picker")
-st.write("Upload gambar dan dapatkan 5 warna dominan.")
+# UI Streamlit
+st.title("🎨 Dominant Color Picker tanpa matplotlib")
 
 uploaded_file = st.file_uploader("Pilih gambar...", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
     image = Image.open(uploaded_file)
-    st.image(image, caption='Gambar yang diupload', use_container_width=True)
-
-    with st.spinner("Mengambil warna dominan..."):
-        colors, hex_colors = manual_color_clustering(image, n_colors=5)
-        st.success("Berhasil! 🎉")
-        show_palette(colors, hex_colors)
+    st.image(image, caption="Gambar yang diupload", use_container_width=True)
+    
+    n_colors = 5  # warna dominan fix 5
+    
+    # Resize gambar supaya proses lebih cepat dan tidak terlalu berat
+    image = image.resize((150, 150))
+    pixels = np.array(image).reshape(-1, 3)  # ubah gambar jadi array 2D (jumlah_pixel x 3)
+    
+    with st.spinner("Menghitung warna dominan..."):
+        centroids = kmeans_manual(pixels, n_colors)  # dapatkan centroid warna dominan
+        hex_colors = [rgb_to_hex(color) for color in centroids]  # konversi ke hex
+    
+    st.success("Warna dominan ditemukan!")
+    
+    # Tampilkan kotak warna dengan hex code di bawahnya
+    cols = st.columns(n_colors)
+    for i, (rgb, hex_code) in enumerate(zip(centroids, hex_colors)):
+        with cols[i]:
+            st.markdown(
+                f"""
+                <div style="
+                    background-color:{hex_code};
+                    width:100%;
+                    height:100px;
+                    border-radius:10px;
+                    border: 1px solid #000;
+                    ">
+                </div>
+                <p style="text-align:center; font-weight:bold;">{hex_code}</p>
+                """,
+                unsafe_allow_html=True
+            )
